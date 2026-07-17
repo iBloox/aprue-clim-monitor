@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -45,8 +47,9 @@ jobs:
           if ! git diff --cached --quiet; then
             git commit -m "update state [skip ci]"
             git fetch origin main
-            git rebase origin/main
+            git rebase -X ours origin/main
             git push
           else
             echo "No state change, skipping commit."
           fi
+          
