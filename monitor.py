@@ -18,6 +18,7 @@
 
 import os
 import sys
+import time
 import json
 import datetime
 
@@ -60,29 +61,47 @@ def save_state(state: dict) -> None:
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
-def check_status() -> bool | None:
+def check_status(retries: int = 3, backoff_seconds: int = 8) -> bool | None:
     """
     يرجع:
       True  إذا كانت الحصص (على الأرجح) مفتوحة الآن،
       False إذا كانت لا تزال مغلقة،
-      None  إذا تعذّر تحديد الحالة (مثلاً ظهرت صفحة تسجيل دخول غير متوقعة)
-            — في هذه الحالة يتم تجاهل الدورة بدل إرسال إشعار خاطئ.
+      None  إذا تعذّر تحديد الحالة (خطأ شبكة متكرر، أو ظهرت صفحة تسجيل
+            دخول غير متوقعة) — في هذه الحالة نتجاهل الدورة بدل الفشل أو
+            إرسال إشعار خاطئ. الموقع معروف بانقطاعات قصيرة أحيانًا
+            (لوحظ انقطاع ~25 دقيقة مرة)، فالفشل المؤقت هنا متوقع وليس خطأ
+            بالكود.
     """
-    resp = requests.get(STATUS_URL, headers=HEADERS, timeout=30, verify=False)
-    resp.raise_for_status()
-    html = resp.text
+    last_error = None
+    for attempt in range(1, retries + 1):
+        try:
+            resp = requests.get(STATUS_URL, headers=HEADERS, timeout=30, verify=False)
+            resp.raise_for_status()
+            html = resp.text
 
-    # حارس أمان: لو صار الموقع يطلب تسجيل دخول فعليًا مستقبلًا
-    if 'id="form_connexion"' in html or 'id="user_connexion"' in html:
-        print(
-            "تحذير: الصفحة رجعت نموذج تسجيل دخول بدل صفحة الحالة. "
-            "قد يكون الموقع بدّل سلوكه (مثلاً صار يتطلب جلسة مسجّلة). "
-            "تجاهلنا هذه الدورة احتياطًا.",
-            file=sys.stderr,
-        )
-        return None
+            # حارس أمان: لو صار الموقع يطلب تسجيل دخول فعليًا مستقبلًا
+            if 'id="form_connexion"' in html or 'id="user_connexion"' in html:
+                print(
+                    "تحذير: الصفحة رجعت نموذج تسجيل دخول بدل صفحة الحالة. "
+                    "تجاهلنا هذه الدورة احتياطًا.",
+                    file=sys.stderr,
+                )
+                return None
 
-    return CLOSED_MARKER not in html
+            return CLOSED_MARKER not in html
+
+        except requests.exceptions.RequestException as e:
+            last_error = e
+            print(f"محاولة {attempt}/{retries} فشلت: {e}", file=sys.stderr)
+            if attempt < retries:
+                time.sleep(backoff_seconds)
+
+    print(
+        f"تعذّر الوصول للموقع بعد {retries} محاولات ({last_error}). "
+        "نتجاهل هذه الدورة، وسنحاول مجددًا بعد 15 دقيقة.",
+        file=sys.stderr,
+    )
+    return None
 
 
 def send_telegram(token: str, chat_id: str, message: str) -> None:
