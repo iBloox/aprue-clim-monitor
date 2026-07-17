@@ -4,7 +4,7 @@ name: APRUE Clim Quota Monitor
   schedule:
     # كل 15 دقيقة - GitHub يستخدم توقيت UTC، وقد يتأخر التنفيذ بضع دقائق
     # في أوقات الضغط العالي على خوادم GitHub (هذا سلوك طبيعي متوقع).
-    - cron: "*/15 * * * *"
+    - cron: "*/2 * * * *"
   workflow_dispatch: {}   # يسمح بتشغيل يدوي من تبويب Actions للاختبار
 
 permissions:
